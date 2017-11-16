@@ -1,0 +1,62 @@
+aspect_ratio = 1.0
+batch_size = 16
+beta1 = 0.5
+checkpoint = None
+crop_size = 256
+display_freq = 0
+flip = True
+gan_weight = 1.0
+input_dir = /data4T1/liyh/data/CelebA/tfrecord
+l1_weight = 100.0
+lab_colorization = False
+lr = 0.0002
+max_epochs = 2000
+max_steps = None
+mode = train
+monochrome = False
+ndf = 64
+ngf = 64
+num_examples = 100
+output_dir = /data4T1/liyh/data/CelebA/checkpoints/gray/2000
+output_filetype = png
+progress_freq = 50
+save_freq = 5000
+scale_size = 286
+seed = 1788119062
+summary_freq = 100
+trace_freq = 0
+which_direction = AtoB
+(16, 256, 256, 3)
+examples count = 1
+parameter_count = 57183616
+examples.steps_per_epoch:  7
+Max step:  14000
+ computations.
+2017-09-22 09:58:40.489775: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use AVX2 instructions, but these are available on your machine and could speed up CPU computations.
+2017-09-22 09:58:40.489781: W tensorflow/core/platform/cpu_feature_guard.cc:45] The TensorFlow library wasn't compiled to use FMA instructions, but these are available on your machine and could speed up CPU computations.
+2017-09-22 09:58:40.732830: I tensorflow/core/common_runtime/gpu/gpu_device.cc:955] Found device 0 with properties: 
+name: TITAN X (Pascal)
+major: 6 minor: 1 memoryClockRate (GHz) 1.531
+pciBusID 0000:05:00.0
+Total memory: 11.90GiB
+Free memory: 11.75GiB
+2017-09-22 09:58:40.732868: I tensorflow/core/common_runtime/gpu/gpu_device.cc:976] DMA: 0 
+2017-09-22 09:58:40.732876: I tensorflow/core/common_runtime/gpu/gpu_device.cc:986] 0:   Y 
+2017-09-22 09:58:40.732885: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1045] Creating TensorFlow device (/gpu:0) -> (device: 0, name: TITAN X (Pascal), pci bus id: 0000:05:00.0)
+2017-09-22 09:58:55.044135: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1045] Creating TensorFlow device (/gpu:0) -> (device: 0, name: TITAN X (Pascal), pci bus id: 0000:05:00.0)
+Traceback (most recent call last):
+  File "pix2pix_mat.py", line 942, in <module>
+    main()
+  File "pix2pix_mat.py", line 904, in main
+    results = sess.run(fetches, options=options, run_metadata=run_metadata)
+  File "/home/liyh/anaconda2/envs/tfpt/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 895, in run
+    run_metadata_ptr)
+  File "/home/liyh/anaconda2/envs/tfpt/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 1124, in _run
+    feed_dict_tensor, options, run_metadata)
+  File "/home/liyh/anaconda2/envs/tfpt/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 1321, in _do_run
+    options, run_metadata)
+  File "/home/liyh/anaconda2/envs/tfpt/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 1327, in _do_call
+    return fn(*args)
+  File "/home/liyh/anaconda2/envs/tfpt/lib/python2.7/site-packages/tensorflow/python/client/session.py", line 1306, in _run_fn
+    status, run_metadata)
+KeyboardInterrupt

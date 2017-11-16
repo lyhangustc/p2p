@@ -1,0 +1,32 @@
+#PBS -N binary2cat_binary_dD
+#PBS -l nodes=1:gpus=1:S
+#PBS -r y
+
+
+
+export LD_LIBRARY_PATH=/home/liyh/lib/cuda/lib64:$LD_LIBRARY_PATH
+export CUDNN_ROOT=/home/liyh/lib/cuda
+export C_INCLUDE_PATH=/home/liyh/lib/cuda/include:$C_INCLUDE_PATH
+export PATH=/opt/cuda:$PATH
+export LD_LIBRARY_PATH=/opt/cuda/lib64:$LD_LIBRARY_PATH
+export PATH=/home/liyh/anaconda2/bin:$PATH
+
+
+cd /data12/liyh/projects/pix2pix-tensorflow
+
+err_f=/home/liyh/pix2pix_checkpoints/doubleD/err_file.err
+log_f=/home/liyh/pix2pix_checkpoints/doubleD/out_file.log
+
+echo Time is 'data'
+echo Directory is $PWD
+echo This job runs on:
+cat $PBS_NODEFILE
+cat $PBS_GPUFILE
+
+python pix2pix_doubleD.py \
+ --mode train \
+ --output_dir /home/liyh/pix2pix_checkpoints/doubleD \
+ --max_epochs 2000 \
+ --input_dir /data1/liyh/Cat_original/binary/combine_color/train  \
+ --which_direction AtoB \
+ --batch_size 16 >$log_f 2>$err_f

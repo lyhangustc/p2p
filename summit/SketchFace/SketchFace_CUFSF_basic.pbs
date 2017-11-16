@@ -1,0 +1,34 @@
+#PBS -N SketchFace_CUFSF_basic_AB
+#PBS -l nodes=1:gpus=1:S
+#PBS -r y
+
+
+
+export LD_LIBRARY_PATH=/home/liyh/lib/cuda/lib64:$LD_LIBRARY_PATH
+export CUDNN_ROOT=/home/liyh/lib/cuda
+export C_INCLUDE_PATH=/home/liyh/lib/cuda/include:$C_INCLUDE_PATH
+export PATH=/opt/cuda:$PATH
+export LD_LIBRARY_PATH=/opt/cuda/lib64:$LD_LIBRARY_PATH
+export PATH=/home/liyh/anaconda2/bin:$PATH
+
+
+cd /data12/liyh/projects/pix2pix-tensorflow
+
+mkdir /data1/liyh/SketchFace/CUFSF/checkpoint/basic_AB
+
+err_f=/data1/liyh/SketchFace/CUFSF/checkpoint/basic_AB/err_file.err
+log_f=/data1/liyh/SketchFace/CUFSF/checkpoint/basic_AB/out_file.log
+
+echo Time is 'data'
+echo Directory is $PWD
+echo This job runs on:
+cat $PBS_NODEFILE
+cat $PBS_GPUFILE
+
+python sketch2face.py \
+ --mode train \
+ --output_dir /data1/liyh/SketchFace/CUFSF/checkpoint/basic_AB \
+ --max_epochs 200 \
+ --input_dir /data1/liyh/SketchFace/CUFSF/tfrecord  \
+ --batch_size 16 \
+ --num_examples 754 >$log_f 2>$err_f
