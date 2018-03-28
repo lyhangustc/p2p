@@ -1,0 +1,37 @@
+#PBS -N MRU_df_
+#PBS -l nodes=1:gpus=2:D
+#PBS -r y
+
+
+
+export LD_LIBRARY_PATH=/home/liyh/lib/cuda/lib64:$LD_LIBRARY_PATH
+export CUDNN_ROOT=/home/liyh/lib/cuda
+export C_INCLUDE_PATH=/home/liyh/lib/cuda/include:$C_INCLUDE_PATH
+export PATH=/opt/cuda:$PATH
+export LD_LIBRARY_PATH=/opt/cuda/lib64:$LD_LIBRARY_PATH
+export PATH=/home/liyh/anaconda2/bin:$PATH
+
+
+cd /data12/liyh/projects/p2p
+
+mkdir /data1/liyh/celebA/checkpoint/2018-3-19_df_mru
+
+err_f=/data1/liyh/celebA/checkpoint/2018-3-19_df_mru/err_file.err
+log_f=/data1/liyh/celebA/checkpoint/2018-3-19_df_mru/out_file.log
+
+echo Time is 'data'
+echo Directory is $PWD
+echo This job runs on:
+cat $PBS_NODEFILE
+cat $PBS_GPUFILE
+
+source activate tfpt2
+
+python p2p_mru.py \
+--mode train \
+--output_dir /data1/liyh/celebA/checkpoint/2018-3-19_df_mru \
+--max_epochs 200 \
+--input_dir /data1/liyh/celebA/distance_field/tfrecord  \
+--batch_size 4 \
+--num_examples 202443 \
+--generator mru >$log_f 2>$err_f

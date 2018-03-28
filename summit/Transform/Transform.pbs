@@ -1,4 +1,4 @@
-#PBS -N SketchFace_CUFSF_basic_AB
+#PBS -N Transform1
 #PBS -l nodes=1:gpus=1:S
 #PBS -r y
 
@@ -12,12 +12,12 @@ export LD_LIBRARY_PATH=/opt/cuda/lib64:$LD_LIBRARY_PATH
 export PATH=/home/liyh/anaconda2/bin:$PATH
 
 
-cd /data12/liyh/projects/pix2pix-tensorflow
+cd /data12/liyh/projects/p2p
 
-mkdir /data1/liyh/SketchFace/CUFSF/checkpoint/basic_AB
+mkdir /data1/liyh/SketchFace/CUHK/Transform/checkpoint/Transform1
 
-err_f=/data1/liyh/SketchFace/CUFSF/checkpoint/basic_AB/err_file.err
-log_f=/data1/liyh/SketchFace/CUFSF/checkpoint/basic_AB/out_file.log
+err_f=/data1/liyh/SketchFace/CUHK/Transform/checkpoint/Transform1/err_file.err
+log_f=/data1/liyh/SketchFace/CUHK/Transform/checkpoint/Transform1/out_file.log
 
 echo Time is 'data'
 echo Directory is $PWD
@@ -25,10 +25,10 @@ echo This job runs on:
 cat $PBS_NODEFILE
 cat $PBS_GPUFILE
 
-python sketch2face.py \
+python Transform.py \
  --mode train \
- --output_dir /data1/liyh/SketchFace/CUFSF/checkpoint/basic_AB \
+ --output_dir /data1/liyh/SketchFace/CUHK/Transform/checkpoint/Transform1 \
  --max_epochs 2000 \
- --input_dir /data1/liyh/SketchFace/CUFSF/tfrecord  \
+ --input_dir /data1/liyh/SketchFace/CUHK/tfrecord  \
  --batch_size 16 \
- --num_examples 754 >$log_f 2>$err_f
+ --num_examples 188 >$log_f 2>$err_f

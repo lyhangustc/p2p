@@ -12,7 +12,7 @@ import random
 import collections
 import math
 import time
-
+import scipy.ndimage as sn 
 
 import warnings
 from functools import partial
@@ -247,7 +247,7 @@ def parse_function(example_proto):
     
     mat = transform(tf.image.grayscale_to_rgb(mat))
     photo = transform(photo)   
-    
+      
     return photo, mat    
     
     

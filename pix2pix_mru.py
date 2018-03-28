@@ -12,13 +12,12 @@ import random
 import collections
 import math
 import time
-
+import scipy.ndimage as sn 
 
 import warnings
 from functools import partial
 from nets import resnet_utils
 from models import *
-#from deform_conv.layers import ConvOffset2D
 
 slim = tf.contrib.slim
 resnet_arg_scope = resnet_utils.resnet_arg_scope
@@ -58,10 +57,9 @@ parser.add_argument("--gan_weight", type=float, default=1.0, help="weight on GAN
 
 #YuhangLi
 parser.add_argument("--num_unet", type=int, default=10, help="number of u-connection layers, used only when generator is encoder-decoder")
-parser.add_argument("--generator", default="encoder_decoder", choices=["resnet", "inception_resnet", "encoder_decoder"])
+parser.add_argument("--generator", default="encoder_decoder", choices=["resnet", "inception_resnet", "encoder_decoder", "mru"])
 parser.add_argument("--double_D", dest="double_D", action="store_true", help="convert image from rgb to gray")
 parser.set_defaults(double_D=False)
-parser.add_argument("--lambda_global", type=float, default=1.0, help="weight of global discriminator loss, used if double_D==True")
 parser.add_argument("--load_tfrecord", dest="load_tfrecord", action="store_true", help="if true, read dataset from TFRecord, otherwise from images")
 parser.set_defaults(load_tfrecord=True)
 parser.add_argument("--num_examples", required=True, type=int, help="number of training/testing examples in TFRecords")
@@ -149,7 +147,7 @@ def load_examples():
     # synchronize seed for image operations so that we do the same operations to both
     # input and output images
     seed = random.randint(0, 2**31 - 1)
-    def transform(image, seed=0, is_flip=False, is_rotate=False, rotate_angle=0.0):
+    def transform(image):
         r = image
         if a.flip:
             r = tf.image.random_flip_left_right(r, seed=seed)
@@ -172,21 +170,14 @@ def load_examples():
         if a.scale_size > CROP_SIZE:
             r = tf.image.crop_to_bounding_box(r, offset[0], offset[1], CROP_SIZE, CROP_SIZE)
         elif a.scale_size < CROP_SIZE:
-            raise Exception("scale size cannot be less than crop size")   
-        
-        # for transform experiments
-        if is_rotate:  
-            r = tf.contrib.image.rotate(r, rotate_angle)
-        if is_flip:
-            r = tf.image.random_flip_left_right(r, seed=seed)
-        
+            raise Exception("scale size cannot be less than crop size")    
         return r
 
     with tf.name_scope("input_images"):
-        input_images = transform(inputs, seed=seed)
+        input_images = transform(inputs)
 
     with tf.name_scope("target_images"):
-        target_images = transform(inputs, seed=seed, is_rotate=True, rotate_angle=90.0)
+        target_images = transform(targets)
 
     paths_batch, inputs_batch, targets_batch = tf.train.batch([paths, input_images, target_images], batch_size=a.batch_size)
     steps_per_epoch = int(math.ceil(len(input_paths) / a.batch_size))
@@ -202,25 +193,28 @@ def load_examples():
         steps_per_epoch=steps_per_epoch,
     )
 
-    
 def parse_function(example_proto):
     features = {
             'height': tf.FixedLenFeature([], tf.int64),
             'width': tf.FixedLenFeature([], tf.int64),
             'depth': tf.FixedLenFeature([], tf.int64),
-            'sketch': tf.FixedLenFeature([], tf.string),
+            'mat': tf.FixedLenFeature([], tf.string),
             'photo': tf.FixedLenFeature([], tf.string)}
     
     parsed_features = tf.parse_single_example(example_proto, features=features) 
     photo = tf.decode_raw(parsed_features['photo'], tf.uint8)
-    photo = tf.reshape(photo, [250, 200, 3])
-    sketch = tf.decode_raw(parsed_features['sketch'], tf.uint8)
-    sketch = tf.reshape(sketch, [250, 200, 1])
+    photo = tf.reshape(photo, [218, 178, 3])
+    mat = tf.decode_raw(parsed_features['mat'], tf.float32) 
+    mat = tf.reshape(mat, [218, 178, 1])
     
+    height = parsed_features['height']
+    width = parsed_features['width']
+    print(height, width)
+    
+    mat = mat * 2. - 1.
     photo = tf.image.convert_image_dtype(photo, dtype=tf.float64)
     photo = photo * 2. -1.    
-    sketch = tf.image.convert_image_dtype(sketch, dtype=tf.float64)
-    sketch = sketch * 2. -1.      
+    
     
     seed = random.randint(0, 2**31 - 1)
     def transform(image):
@@ -252,24 +246,26 @@ def parse_function(example_proto):
             raise Exception("scale size cannot be less than crop size")    
         return r
     
-    sketch = transform(tf.image.grayscale_to_rgb(sketch))
-    photo = transform(photo)   
+
     
-    return sketch, photo
+    mat = transform(tf.image.grayscale_to_rgb(mat))
+    photo = transform(photo)   
+      
+    return photo, mat    
     
     
 def read_tfrecord():
-    filenames = glob.glob(os.path.join(a.input_dir, "*_train.tfrecords"))
+    filenames = glob.glob(os.path.join(a.input_dir, "*.tfrecords"))
     dataset = tf.contrib.data.TFRecordDataset(filenames)
     dataset = dataset.map(parse_function)  # Parse the record into tensors.
     dataset = dataset.repeat()  # Repeat the input indefinitely.
     # dataset = dataset.shuffle(buffer_size=10000)
     dataset = dataset.batch(a.batch_size)
     iterator = dataset.make_one_shot_iterator()
-    A_image, B_image = iterator.get_next()
+    photo, mat = iterator.get_next()
 
-    A_image.set_shape([a.batch_size, CROP_SIZE, CROP_SIZE, 3])
-    B_image.set_shape([a.batch_size, CROP_SIZE, CROP_SIZE, 3])
+    photo.set_shape([a.batch_size, CROP_SIZE, CROP_SIZE, 3])
+    mat.set_shape([a.batch_size, CROP_SIZE, CROP_SIZE, 3])
     
     
     # print(mat.get_shape())
@@ -281,29 +277,127 @@ def read_tfrecord():
     #sio.savemat(os.path.join('/data4T1/liyh/data/CelebA/tfrecord', "b2.mat"), {"predict": photo1[0,:,:,:]})
     #sio.savemat(os.path.join('/data4T1/liyh/data/CelebA/tfrecord', "a2.mat"), {"predict": mat1[0,:,:,:]})
     
+    return Examples(
+        paths=None,
+        inputs=mat,
+        targets=photo,
+        count=len(filenames),
+        steps_per_epoch=steps_per_epoch
+    ), iterator
 
+def mru(x, I, output_channel, stride=1):
+    ''' Mask Residual Unit defined in SketchyGAN paper '''
     
-    if a.which_direction == "AtoB":
-        return Examples(
-                paths=None,
-                inputs=A_image,
-                targets=B_image,
-                count=len(filenames),
-                steps_per_epoch=steps_per_epoch
-            ), iterator
-    elif a.which_direction == "BtoA":
-        return Examples(
-                paths=None,
-                inputs=B_image,
-                targets=A_image,
-                count=len(filenames),
-                steps_per_epoch=steps_per_epoch
-            ), iterator
-    else:
-        raise Exception("invalid direction")
-     
-        
+    channel_x = x.shape[3]
+    
+    x_I = tf.concat([x, I], axis=3)
+    m = slim.conv2d(x_I, channel_x, [3, 3], stride=1,
+                           normalizer_fn=None, activation_fn=tf.sigmoid)
+    n = slim.conv2d(x_I, output_channel, [3, 3], stride=stride,
+                           normalizer_fn=None, activation_fn=tf.sigmoid)
+
+    x_m_I = tf.concat([tf.multiply(x, m), I], axis=3)
+    if not stride == 1:
+        x = slim.conv2d(x, output_channel, [1, 1], stride=stride,
+                           normalizer_fn=None, activation_fn=None)   
+    z = slim.conv2d(x_m_I, output_channel, [3, 3], stride=stride,
+                           normalizer_fn=None, activation_fn=tf.nn.relu)
+    y = tf.multiply(x, 1-n) + tf.multiply(z, n)
+    return y
+
+def demru(x, I, output_channel, stride=1):
+    ''' Mask Residual Unit defined in SketchyGAN paper, deconv version '''
+    
+    channel_x = x.shape[3]
+    
+    x_I = tf.concat([x, I], axis=3)
+    m = slim.conv2d(x_I, channel_x, [3, 3], stride=1,
+                           normalizer_fn=None, activation_fn=tf.sigmoid)
+    n = slim.conv2d_transpose(x_I, output_channel, [3, 3], stride=stride,
+                           normalizer_fn=None, activation_fn=tf.sigmoid)
+    
+    x_m_I = tf.concat([tf.multiply(x, m), I], axis=3)
+    if not stride == 1:
+        x = slim.conv2d_transpose(x, output_channel, [1, 1], stride=stride,
+                           normalizer_fn=None, activation_fn=None)
+    z = slim.conv2d_transpose(x_m_I, output_channel, [3, 3], stride=stride,
+                           normalizer_fn=None, activation_fn=tf.nn.relu)
+    y = tf.multiply(x, 1-n) + tf.multiply(z, n)
+    return y
+    
 def create_generator_mru(generator_inputs, generator_outputs_channels):
+    """
+    Replace conv in encoder-decoder network with MRU.
+    First and last layer still use conv and deconv.
+    No dropout presently.
+    Stride = 2, output_channel = input_channel * 2 """
+    
+    layers = []
+
+    # encoder_1: [batch, 256, 256, in_channels] => [batch, 128, 128, ngf]
+    with tf.variable_scope("encoder_1"):
+        output = conv(generator_inputs, a.ngf, stride=2)
+        rectified = lrelu(output, 0.2)
+
+        layers.append(output)
+
+    layer_specs = [
+        a.ngf * 2, # encoder_2: [batch, 128, 128, ngf] => [batch, 64, 64, ngf * 2]
+        a.ngf * 4, # encoder_3: [batch, 64, 64, ngf * 2] => [batch, 32, 32, ngf * 4]
+        a.ngf * 8, # encoder_4: [batch, 32, 32, ngf * 4] => [batch, 16, 16, ngf * 8]
+        a.ngf * 8, # encoder_5: [batch, 16, 16, ngf * 8] => [batch, 8, 8, ngf * 8]
+        a.ngf * 8, # encoder_6: [batch, 8, 8, ngf * 8] => [batch, 4, 4, ngf * 8]
+        # a.ngf * 8, # encoder_7: [batch, 4, 4, ngf * 8] => [batch, 2, 2, ngf * 8]
+        # a.ngf * 8, # encoder_8: [batch, 2, 2, ngf * 8] => [batch, 1, 1, ngf * 8]
+    ]
+
+    for out_channels in layer_specs:
+        with tf.variable_scope("encoder_%d" % (len(layers) + 1)):
+            # [batch, in_height, in_width, in_channels] => [batch, in_height/2, in_width/2, out_channels]
+            output = mru(layers[-1], tf.image.resize_images(generator_inputs, [layers[-1].shape[1], layers[-1].shape[2]]), out_channels, stride=2)
+            layers.append(output)
+
+    layer_specs = [
+        # (a.ngf * 8, 0.0),   # decoder_8: [batch, 1, 1, ngf * 8] => [batch, 2, 2, ngf * 8 * 2]
+        # (a.ngf * 8, 0.0),   # decoder_7: [batch, 2, 2, ngf * 8 * 2] => [batch, 4, 4, ngf * 8 * 2]
+        (a.ngf * 8, 0.0),   # decoder_6: [batch, 4, 4, ngf * 8 * 2] => [batch, 8, 8, ngf * 8 * 2]
+        (a.ngf * 8, 0.0),   # decoder_5: [batch, 8, 8, ngf * 8 * 2] => [batch, 16, 16, ngf * 8 * 2]
+        (a.ngf * 4, 0.0),   # decoder_4: [batch, 16, 16, ngf * 8 * 2] => [batch, 32, 32, ngf * 4 * 2]
+        (a.ngf * 2, 0.0),   # decoder_3: [batch, 32, 32, ngf * 4 * 2] => [batch, 64, 64, ngf * 2 * 2]
+        (a.ngf, 0.0),       # decoder_2: [batch, 64, 64, ngf * 2 * 2] => [batch, 128, 128, ngf * 2]
+    ]
+    
+   
+
+    num_encoder_layers = len(layers)
+    for decoder_layer, (out_channels, dropout) in enumerate(layer_specs):
+        skip_layer = num_encoder_layers - decoder_layer - 1
+        with tf.variable_scope("decoder_%d" % (skip_layer + 1)):
+            if decoder_layer == 0 or decoder_layer >= a.num_unet:
+                # first decoder layer doesn't have skip connections
+                # since it is directly connected to the skip_layer
+                input = layers[-1]
+            else:
+                input = tf.concat([layers[-1], layers[skip_layer]], axis=3)
+
+            # [batch, in_height, in_width, in_channels] => [batch, in_height*2, in_width*2, out_channels]
+            output = demru(input,  tf.image.resize_images(generator_inputs, [input.shape[1], input.shape[2]]), out_channels, stride=2)
+            
+            
+            if dropout > 0.0:
+                output = tf.nn.dropout(output, keep_prob=1 - dropout)
+
+            layers.append(output)
+
+    # decoder_1: [batch, 128, 128, ngf * 2] => [batch, 256, 256, generator_outputs_channels]
+    with tf.variable_scope("decoder_1"):
+        input = tf.concat([layers[-1], layers[0]], axis=3)
+        rectified = tf.nn.relu(input)
+        output = deconv(rectified, generator_outputs_channels)
+        output = tf.tanh(output)
+        layers.append(output)
+
+    return layers[-1]
     return
  
 def create_generator_resnet(generator_inputs, generator_outputs_channels):
@@ -324,74 +418,6 @@ def create_generator_resnet(generator_inputs, generator_outputs_channels):
         output = slim.conv2d(net, generator_outputs_channels, [1, 1], stride=1,
                            normalizer_fn=None, activation_fn=None)                             
     return output
-
-def create_generator_deformable(generator_inputs, generator_outputs_channels):
-    """create a generator in encoder-decoder architecture with u-connection"""
-    layers = []
-
-    # encoder_1: [batch, 256, 256, in_channels] => [batch, 128, 128, ngf]
-    with tf.variable_scope("encoder_1"):
-        output = conv(generator_inputs, a.ngf, stride=2)
-        layers.append(output)
-
-    layer_specs = [
-        a.ngf * 2, # encoder_2: [batch, 128, 128, ngf] => [batch, 64, 64, ngf * 2]
-        a.ngf * 4, # encoder_3: [batch, 64, 64, ngf * 2] => [batch, 32, 32, ngf * 4]
-        a.ngf * 8, # encoder_4: [batch, 32, 32, ngf * 4] => [batch, 16, 16, ngf * 8]
-        a.ngf * 8, # encoder_5: [batch, 16, 16, ngf * 8] => [batch, 8, 8, ngf * 8]
-        a.ngf * 8, # encoder_6: [batch, 8, 8, ngf * 8] => [batch, 4, 4, ngf * 8]
-        a.ngf * 8, # encoder_7: [batch, 4, 4, ngf * 8] => [batch, 2, 2, ngf * 8]
-        a.ngf * 8, # encoder_8: [batch, 2, 2, ngf * 8] => [batch, 1, 1, ngf * 8]
-    ]
-
-    for out_channels in layer_specs:
-        with tf.variable_scope("encoder_%d" % (len(layers) + 1)):
-            rectified = lrelu(layers[-1], 0.2)
-            # [batch, in_height, in_width, in_channels] => [batch, in_height/2, in_width/2, out_channels]
-            convolved = conv(rectified, out_channels, stride=2)
-            output = batchnorm(convolved)
-            layers.append(output)
-
-    layer_specs = [
-        (a.ngf * 8, 0.5),   # decoder_8: [batch, 1, 1, ngf * 8] => [batch, 2, 2, ngf * 8 * 2]
-        (a.ngf * 8, 0.5),   # decoder_7: [batch, 2, 2, ngf * 8 * 2] => [batch, 4, 4, ngf * 8 * 2]
-        (a.ngf * 8, 0.5),   # decoder_6: [batch, 4, 4, ngf * 8 * 2] => [batch, 8, 8, ngf * 8 * 2]
-        (a.ngf * 8, 0.0),   # decoder_5: [batch, 8, 8, ngf * 8 * 2] => [batch, 16, 16, ngf * 8 * 2]
-        (a.ngf * 4, 0.0),   # decoder_4: [batch, 16, 16, ngf * 8 * 2] => [batch, 32, 32, ngf * 4 * 2]
-        (a.ngf * 2, 0.0),   # decoder_3: [batch, 32, 32, ngf * 4 * 2] => [batch, 64, 64, ngf * 2 * 2]
-        (a.ngf, 0.0),       # decoder_2: [batch, 64, 64, ngf * 2 * 2] => [batch, 128, 128, ngf * 2]
-    ]
-
-    num_encoder_layers = len(layers)
-    for decoder_layer, (out_channels, dropout) in enumerate(layer_specs):
-        skip_layer = num_encoder_layers - decoder_layer - 1
-        with tf.variable_scope("decoder_%d" % (skip_layer + 1)):
-            if decoder_layer == 0 or decoder_layer >= a.num_unet:
-                # first decoder layer doesn't have skip connections
-                # since it is directly connected to the skip_layer
-                input = layers[-1]
-            else:
-                input = tf.concat([layers[-1], layers[skip_layer]], axis=3)
-
-            rectified = tf.nn.relu(input)
-            # [batch, in_height, in_width, in_channels] => [batch, in_height*2, in_width*2, out_channels]
-            output = deconv(rectified, out_channels)
-            output = batchnorm(output)
-
-            if dropout > 0.0:
-                output = tf.nn.dropout(output, keep_prob=1 - dropout)
-
-            layers.append(output)
-
-    # decoder_1: [batch, 128, 128, ngf * 2] => [batch, 256, 256, generator_outputs_channels]
-    with tf.variable_scope("decoder_1"):
-        input = tf.concat([layers[-1], layers[0]], axis=3)
-        rectified = tf.nn.relu(input)
-        output = deconv(rectified, generator_outputs_channels)
-        output = tf.tanh(output)
-        layers.append(output)
-
-    return layers[-1]
     
 def create_generator_ed(generator_inputs, generator_outputs_channels):
     """create a generator in encoder-decoder architecture with u-connection"""
@@ -459,8 +485,7 @@ def create_generator_ed(generator_inputs, generator_outputs_channels):
         output = tf.tanh(output)
         layers.append(output)
 
-    return layers[-1]
-    
+    return layers[-1]   
     
 def create_model(inputs, targets):
     def create_discriminator(discrim_inputs, discrim_targets):
@@ -540,6 +565,8 @@ def create_model(inputs, targets):
             outputs = create_generator_irnet(inputs, out_channels)
         elif a.generator == 'encoder_decoder':
             outputs = create_generator_ed(inputs, out_channels)
+        elif a.generator == 'mru':
+            outputs = create_generator_mru(inputs, out_channels)
     # create two copies of discriminator, one for real pairs and one for fake pairs
     # they share the same underlying variables
     with tf.name_scope("real_discriminator_patch"):
@@ -550,8 +577,7 @@ def create_model(inputs, targets):
     with tf.name_scope("real_discriminator_global"):
         with tf.variable_scope("discriminator_global"):
             # 2x [batch, height, width, channels] => [batch, 1, 1, 1]
-            if a.double_D:
-                predict_real_global = create_discriminator_global(inputs, targets)
+            predict_real_global = create_discriminator_global(inputs, targets)
     
     with tf.name_scope("fake_discriminator"):
         with tf.variable_scope("discriminator_patch", reuse=True):
@@ -561,18 +587,15 @@ def create_model(inputs, targets):
     with tf.name_scope("fake_discriminator_global"):
         with tf.variable_scope("discriminator_global", reuse=True):
             # 2x [batch, height, width, channels] => [batch, 1, 1, 1]
-            if a.double_D:
-                predict_fake_global = create_discriminator_global(inputs, outputs)            
+            predict_fake_global = create_discriminator_global(inputs, outputs)            
 
     with tf.name_scope("discriminator_loss"):
         # minimizing -tf.log will try to get inputs to 1
         # predict_real => 1
         # predict_fake => 0
         discrim_loss = tf.reduce_mean(-(tf.log(predict_real_patch + EPS) \
-            + tf.log(1 - predict_fake + EPS))) 
-        if a.double_D:
-            discrim_loss += - a.lambda_global * (tf.log(predict_real_global + EPS) \
-            + tf.log(1 - predict_fake_global + EPS))
+            + tf.log(predict_real_global + EPS) \
+            + tf.log(1 - predict_fake + EPS)))
     
    
     with tf.name_scope("generator_loss"):
@@ -613,8 +636,6 @@ def create_model(inputs, targets):
         train=tf.group(update_losses, incr_global_step, gen_train),
     )
 
-
-
 def save_images(fetches, step=None):
     image_dir = os.path.join(a.output_dir, "images")
     if not os.path.exists(image_dir):
@@ -651,7 +672,6 @@ def save_images(fetches, step=None):
                     f.write(contents)
             filesets.append(fileset)
     return filesets
-
 
 def append_index(filesets, step=False):
     index_path = os.path.join(a.output_dir, "index.html")

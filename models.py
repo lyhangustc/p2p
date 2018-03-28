@@ -5,6 +5,10 @@ from __future__ import print_function
 import tensorflow as tf
 import numpy as np
 
+from nets import resnet_utils
+resnet_arg_scope = resnet_utils.resnet_arg_scope
+slim = tf.contrib.slim
+trunc_normal = lambda stddev: tf.truncated_normal_initializer(0.0, stddev)
 def preprocess(image):
     with tf.name_scope("preprocess"):
         # [0, 1] => [-1, 1]
@@ -180,5 +184,45 @@ def block_stem(net, scale=1.0, activation_fn=tf.nn.relu, scope=None, reuse=None)
         with tf.variable_scope('Branch_0'):
             a=1#tower_maxpool = 
     
-# def create_generator_irnet(generator_inputs, generator_outputs_channels):
+
+
+def mru(x, I, output_channel, stride=1):
+    ''' Mask Residual Unit defined in SketchyGAN paper '''
+    
+    channel_x = x.shape[3]
+    
+    x_I = tf.concat([x, I], axis=3)
+    m = slim.conv2d(x_I, channel_x, [3, 3], stride=1,
+                           normalizer_fn=None, activation_fn=tf.sigmoid)
+    n = slim.conv2d(x_I, output_channel, [3, 3], stride=stride,
+                           normalizer_fn=None, activation_fn=tf.sigmoid)
+
+    x_m_I = tf.concat([tf.multiply(x, m), I], axis=3)
+    if not stride == 1:
+        x = slim.conv2d(x, output_channel, [1, 1], stride=stride,
+                           normalizer_fn=None, activation_fn=None)   
+    z = slim.conv2d(x_m_I, output_channel, [3, 3], stride=stride,
+                           normalizer_fn=None, activation_fn=tf.nn.relu)
+    y = tf.multiply(x, 1-n) + tf.multiply(z, n)
+    return y
+
+def demru(x, I, output_channel, stride=1):
+    ''' Mask Residual Unit defined in SketchyGAN paper, deconv version '''
+    
+    channel_x = x.shape[3]
+    
+    x_I = tf.concat([x, I], axis=3)
+    m = slim.conv2d(x_I, channel_x, [3, 3], stride=1,
+                           normalizer_fn=None, activation_fn=tf.sigmoid)
+    n = slim.conv2d_transpose(x_I, output_channel, [3, 3], stride=stride,
+                           normalizer_fn=None, activation_fn=tf.sigmoid)
+    
+    x_m_I = tf.concat([tf.multiply(x, m), I], axis=3)
+    if not stride == 1:
+        x = slim.conv2d_transpose(x, output_channel, [1, 1], stride=stride,
+                           normalizer_fn=None, activation_fn=None)
+    z = slim.conv2d_transpose(x_m_I, output_channel, [3, 3], stride=stride,
+                           normalizer_fn=None, activation_fn=tf.nn.relu)
+    y = tf.multiply(x, 1-n) + tf.multiply(z, n)
+    return y
     
